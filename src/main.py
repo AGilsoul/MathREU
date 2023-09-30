@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 
 
 class Model:
-
     class ParamSet:
         def __init__(self, psi_max, psi_min, k, MIC, zMIC, dose_frequency=0.125, a0_MIC_ratio=5):
             self.psi_max = psi_max
@@ -14,6 +13,13 @@ class Model:
             self.a0 = zMIC * a0_MIC_ratio
             self.dose_frequency = dose_frequency
             return
+
+
+Ciprofloxacin = Model.ParamSet(0.88, -6.5, 1.1, 0.017, 0.03)
+Ampicillin = Model.ParamSet(0.75, -4.0, 0.75, 3.4, 8.0)
+Rifampin = Model.ParamSet(0.7, -4.3, 2.5, 12.0, 8.0)
+Streptomycin = Model.ParamSet(0.89, -8.8, 1.9, 18.5, 32.0)
+Tetracycline = Model.ParamSet(0.81, -8.1, 0.61, 0.67, 1.0)
 
 
 # growth rate of bacterial population
@@ -44,20 +50,16 @@ def basic_euler(X_0, params: Model.ParamSet):
     X = []
     ab = []
     for i in range(0, len(time_range)):
-        print(i)
         if i == 0:
             cur_X = X_0
         else:
             cur_X = X[-1]
         dx, a = dX_dt(time_range[i], cur_X, params)
-        print(f'dx: {dx}, dt: {dt}')
         X.append(cur_X + dx * dt)
         ab.append(a)
 
     X = np.array(X)
     ab = np.array(ab)
-    print(f'X: {X}')
-    print(f'AB: {ab}')
 
     fig, ax = plt.subplots(1, 2)
     ax[0].plot(time_range, X)
@@ -79,11 +81,14 @@ def basic_euler(X_0, params: Model.ParamSet):
 
 
 def main():
-    # for Ampicillin
-    basic_euler(10**6,
-                params=Model.ParamSet(0.75, -4.0, 1, 3.4, 8.0))
+    # basic_euler(10**6, Ciprofloxacin)
+    basic_euler(10**6, Ampicillin)
+    # basic_euler(10**6, Rifampin)
+    # basic_euler(10**6, Streptomycin)
+    # basic_euler(10**6, Tetracycline)
     return
 
 
 if __name__ == '__main__':
     main()
+
