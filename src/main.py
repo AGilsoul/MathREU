@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 
 class Model:
     class Antibiotic:
+        last_a0 = 0
+
         def __init__(self, psi_max, psi_min, k, MIC, zMIC, a0_MIC_ratio=5, name='Parameters'):
             self.psi_max = psi_max
             self.psi_min = psi_min
@@ -11,6 +13,7 @@ class Model:
             self.MIC = MIC
             self.zMIC = zMIC
             self.a0 = zMIC * a0_MIC_ratio
+            self.last_a0 = self.a0
             self.name = name
             return
 
@@ -18,6 +21,7 @@ class Model:
         doses = []
         cur_dose = 0
         time_since_dose = 0
+        last_dose_missed = False
 
         def __init__(self, time_range, dose_frequency=0.125, num_hours=24, doses_missed=[], double_dose=False):
             self.time_range = time_range
@@ -38,7 +42,11 @@ class Simulation:
 
     def show_sim(self):
         fig, ax = plt.subplots(1, 2)
-        plt.title(self.antibiotic.name)
+        if self.regimen.double_dose:
+            title = f'Double Dose {self.antibiotic.name}'
+        else:
+            title = f'Single Dose {self.antibiotic.name}'
+        plt.title(title)
         ax[0].plot(self.regimen.time_range, self.population)
         ax[0].set_yscale('log')
         ax[0].set_ylabel('Bacterial Density')
@@ -83,7 +91,7 @@ test_range = np.linspace(0, num_hours, 10**k)
 set_missed_doses = [1, 7, 9, 11, 23]
 
 base_regimen = Model.Regimen(test_range)
-single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses)
+single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=True)
 
 Ciprofloxacin = Model.Antibiotic(0.88, -6.5, 1.1, 0.017, 0.03, name='Ciprofloxacin')
 Ampicillin = Model.Antibiotic(0.75, -4.0, 0.75, 3.4, 8.0, name='Ampicillin')
@@ -117,12 +125,18 @@ def ab_conc(t: float, dt: float, antibiotic: Model.Antibiotic, regimen: Model.Re
         regimen.cur_dose += 1
         if regimen.doses[regimen.cur_dose - 1] == 1:
             print(f'dose {regimen.cur_dose} given at {t}')
+            if regimen.last_dose_missed and regimen.double_dose:
+                antibiotic.last_a0 = 2 * antibiotic.a0
+            else:
+                antibiotic.last_a0 = antibiotic.a0
             regimen.time_since_dose = dt
-            return antibiotic.a0
+            regimen.last_dose_missed = False
+            return antibiotic.last_a0
         else:
+            regimen.last_dose_missed = True
             print(f'dose {regimen.cur_dose} missed at  {t}')
     regimen.time_since_dose += dt
-    return antibiotic.a0 * np.exp(delta * regimen.time_since_dose)
+    return antibiotic.last_a0 * np.exp(delta * regimen.time_since_dose)
 
 
 def main():
