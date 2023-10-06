@@ -13,63 +13,90 @@ from scipy.integrate import solve_ivp
 # DO FOR SINGLE AND DOUBLE DOSE
 
 
-class Model:
-    class Antibiotic:
-        last_a0 = 0
+threshold = 1e-6
 
-        def __init__(self, psi_max, psi_min, k, MIC, zMIC, a0_MIC_ratio=5, name='Parameters'):
-            self.psi_max = psi_max
-            self.psi_min = psi_min
-            self.k = k
-            self.MIC = MIC
-            self.zMIC = zMIC
-            self.a0 = zMIC * a0_MIC_ratio
-            self.last_a0 = self.a0
-            self.name = name
-            return
 
-    class Regimen:
-        doses = []
-        cur_dose = 0
-        time_since_dose = 0
-        last_dose_missed = False
+class Antibiotic:
+    def __init__(self, psi_max, psi_min, k, MIC, zMIC, a0_MIC_ratio=5, name='Parameters'):
+        self.psi_max = psi_max
+        self.psi_min = psi_min
+        self.k = k
+        self.MIC = MIC
+        self.zMIC = zMIC
+        self.a0 = zMIC * a0_MIC_ratio
+        self.last_a0 = self.a0
+        self.name = name
+        return
 
-        def __init__(self, time_range, dose_frequency=0.125, num_hours=24, doses_missed=[], double_dose=False):
-            self.time_range = time_range
-            self.dose_frequency = dose_frequency
-            self.num_hours = num_hours
-            self.doses_missed = doses_missed
-            self.double_dose = double_dose
-            self.num_doses = int(num_hours * dose_frequency)
-            self.doses = [1 if i not in doses_missed else 0 for i in range(self.num_doses)]
+
+class Regimen:
+    def __init__(self, time_range, antibiotic: Antibiotic, num_doses=21, dose_period=8, p=1.0, double_dose=False):
+        self.last_timestep = 0
+        self.time_since_dose = 0
+        self.last_dose_missed = False
+        self.took_dose = False
+        self.num_doses = num_doses
+        self.dose_period = dose_period
+        self.time_range = time_range
+        self.double_dose = double_dose
+        self.p = p
+        self.ab = [self.ab_conc(t, antibiotic) for t in time_range]
+
+    # antibiotic concentration at time t (hours)
+    def ab_conc(self, t: float, antibiotic: Antibiotic):
+        # get half life of antibiotic
+        delta = (1 / self.dose_period) * np.log(0.5 * antibiotic.MIC / antibiotic.a0)
+
+        # get time since last dose
+        last_dose_delta = self.time_since_dose % self.dose_period
+
+        # determine if a dose should be taken
+        if (last_dose_delta == 0 or abs(self.dose_period - self.time_since_dose) < (
+                t - self.last_timestep)) and self.num_doses > 0 and not self.took_dose:
+            self.num_doses -= 1
+            print(f'dose administered at t={t}')
+            if self.last_dose_missed and self.double_dose:
+                antibiotic.last_a0 = 2 * antibiotic.a0
+            else:
+                antibiotic.last_a0 = antibiotic.a0
+            self.time_since_dose = 0
+            self.last_dose_missed = False
+            self.took_dose = True
+            self.last_timestep = t
+            return antibiotic.last_a0
+        # update time since last dose
+        # update last timestep
+        self.time_since_dose += t - self.last_timestep
+        self.last_timestep = t
+        self.took_dose = False
+        return antibiotic.last_a0 * np.exp(delta * self.time_since_dose)
 
 
 class Simulation:
 
     def __init__(self):
-        self.antibiotic = Model.Antibiotic
-        self.regimen = Model.Regimen
+        self.t_range = []
         self.population = []
         self.ab = []
         self.time_steps = []
 
-    def show_sim(self):
+    def show_sim(self, antibiotic, regimen):
         fig, ax = plt.subplots(1, 2)
-        if self.regimen.double_dose:
-            title = f'Double Dose {self.antibiotic.name}'
+        if regimen.double_dose:
+            title = f'Double Dose {antibiotic.name}'
         else:
-            title = f'Single Dose {self.antibiotic.name}'
+            title = f'Single Dose {antibiotic.name}'
         plt.title(title)
-        ax[0].plot(self.regimen.time_range, self.population)
+        ax[0].plot(self.t_range, self.population)
         ax[0].set_yscale('log')
         ax[0].set_ylabel('Bacterial Density')
         ax[0].set_xlabel('Time (hrs)')
 
-        base_mic = [self.antibiotic.MIC for _ in self.regimen.time_range]
-        base_zmic = [self.antibiotic.zMIC for _ in self.regimen.time_range]
-        ax[1].plot(self.regimen.time_range, self.ab)
-        ax[1].plot(self.regimen.time_range, base_mic, label='MIC')
-        ax[1].plot(self.regimen.time_range, base_zmic, label='zMIC')
+        base_mic = [antibiotic.MIC for _ in self.t_range]
+        base_zmic = [antibiotic.zMIC for _ in self.t_range]
+        ax[1].plot(self.t_range, self.ab)
+        ax[1].plot(self.t_range, base_mic, label='MIC')
+        ax[1].plot(self.t_range, base_zmic, label='zMIC')
         ax[1].set_ylabel('Antibiotic Concentration')
         ax[1].set_xlabel('Time (hrs)')
         ax[1].legend(loc='upper right')
@@ -77,19 +104,17 @@ class Simulation:
 
 
 class Euler(Simulation):
-    def __init__(self, X_0, deriv, antibiotic: Model.Antibiotic, regimen: Model.Regimen):
+    def __init__(self, X_0, deriv, antibiotic: Antibiotic, regimen: Regimen):
         super().__init__()
         self.antibiotic = antibiotic
         self.regimen = regimen
         dt = num_hours / 10**k
-        print(f'dt: {dt}')
         for i in range(0, len(regimen.time_range)):
             if i == 0:
                 cur_X = X_0
             else:
-                dt = regimen.time_range[i] - regimen.time_range[i-1]
                 cur_X = self.population[-1]
-            dx, a = deriv(regimen.time_range[i], dt, cur_X, antibiotic, regimen)
+            dx, a = deriv(regimen.time_range[i], cur_X, antibiotic, regimen)
             self.population.append(cur_X + dx * dt)
             self.ab.append(a)
 
@@ -97,64 +122,57 @@ class Euler(Simulation):
         self.ab = np.array(self.ab)
         return
 
+
 class RK45(Simulation):
-    def __init__(self):
+    def __init__(self, X_0, deriv, antibiotic: Antibiotic, regimen: Regimen):
+        super().__init__()
+        t_span = (0, num_hours)
+        self.t_range = regimen.time_range
+        ab_vals = regimen.ab
+        solX = solve_ivp(lambda t, x: deriv(t, x, antibiotic, regimen), t_span, [X_0], t_eval=regimen.time_range, dense_output=True, method='RK45')
+        z = solX.sol(self.t_range)[0]
+        self.population = z
+        self.ab = ab_vals
+        return
 
 
-k = 6
-num_hours = 48
+k = 7
+days = 10
+num_hours = 24 * days  # 7 days in hours
 test_range = np.linspace(0, num_hours, 10**k)
 set_missed_doses = [2]
 
-base_regimen = Model.Regimen(test_range)
-# single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=True)
-single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=[], double_dose=True)
-# double_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=False)
 
-Ciprofloxacin = Model.Antibiotic(0.88, -6.5, 1.1, 0.017, 0.03, name='Ciprofloxacin')
-Ampicillin = Model.Antibiotic(0.75, -4.0, 0.75, 3.4, 8.0, name='Ampicillin')
-Rifampin = Model.Antibiotic(0.7, -4.3, 2.5, 12.0, 8.0, name='Rifampin')
-Streptomycin = Model.Antibiotic(0.89, -8.8, 1.9, 18.5, 32.0, name='Streptomycin')
-Tetracycline = Model.Antibiotic(0.81, -8.1, 0.61, 0.67, 1.0, name='Tetracycline')
+Ciprofloxacin = Antibiotic(0.88, -6.5, 1.1, 0.017, 0.03, name='Ciprofloxacin')
+Ampicillin = Antibiotic(0.75, -4.0, 0.75, 3.4, 8.0, name='Ampicillin')
+Rifampin = Antibiotic(0.7, -4.3, 2.5, 12.0, 8.0, name='Rifampin')
+Streptomycin = Antibiotic(0.89, -8.8, 1.9, 18.5, 32.0, name='Streptomycin')
+Tetracycline = Antibiotic(0.81, -8.1, 0.61, 0.67, 1.0, name='Tetracycline')
+
+# base_regimen = Regimen(test_range, Ampicillin)
+# single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=True)
+single_regimen = Regimen(test_range, Ampicillin, double_dose=True)
+# double_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=False)
 
 
 # growth rate of bacterial population
-def psi(ab_conc: float, antibiotic: Model.Antibiotic):
+def psi(ab_conc: float, antibiotic: Antibiotic):
     numerator = (antibiotic.psi_max - antibiotic.psi_min) * (ab_conc/antibiotic.zMIC)**antibiotic.k
     denominator = (ab_conc/antibiotic.zMIC)**antibiotic.k - (antibiotic.psi_min/antibiotic.psi_max)
     return antibiotic.psi_max - (numerator / denominator)
 
 
 # change in density, X, of a bacterial population
-def dX_dt(t: float, dt: float, X: float, antibiotic: Model.Antibiotic, regimen: Model.Regimen):
-    ab = ab_conc(t, dt, antibiotic, regimen)
-    return np.log(10) * psi(ab, antibiotic) * X, ab
+def dX_dt(t: float, X: float, antibiotic: Antibiotic, regimen: Regimen):
+    if X < threshold:
+        return 0
+
+    ab = np.interp(t, regimen.time_range, regimen.ab)
+    print(f't: {t}, ab: {ab}')
+    return np.log(10) * psi(ab, antibiotic) * X
 
 
-# antibiotic concentration at time t (hours)
-def ab_conc(t: float, dt: float, antibiotic: Model.Antibiotic, regimen: Model.Regimen):
-    delta = regimen.dose_frequency * np.log(0.5*antibiotic.MIC/antibiotic.a0)
 
-    dose_period = (1 / regimen.dose_frequency)
-
-    last_dose_delta = round(regimen.time_since_dose, k) % dose_period
-
-    if (last_dose_delta == 0 or abs(dose_period - last_dose_delta) < dt) and regimen.cur_dose < len(regimen.doses):
-        regimen.cur_dose += 1
-        if regimen.doses[regimen.cur_dose - 1] == 1:
-            print(f'dose {regimen.cur_dose} given at {t}')
-            if regimen.last_dose_missed and regimen.double_dose:
-                antibiotic.last_a0 = 2 * antibiotic.a0
-            else:
-                antibiotic.last_a0 = antibiotic.a0
-            regimen.time_since_dose = dt
-            regimen.last_dose_missed = False
-            return antibiotic.last_a0
-        else:
-            regimen.last_dose_missed = True
-            print(f'dose {regimen.cur_dose} missed at  {t}')
-    regimen.time_since_dose += dt
-    return antibiotic.last_a0 * np.exp(delta * regimen.time_since_dose)
 
 
 def main():
@@ -163,10 +181,9 @@ def main():
     # basic_euler(10**6, Rifampin)
     # basic_euler(10**6, Streptomycin)
     # basic_euler(10**6, Tetracycline)
-    sim = Euler(10**6, dX_dt, Tetracycline, single_regimen)
-    # sim1 = Euler(10**6, dX_dt, Ampicillin, double_regimen)
-    sim.show_sim()
-    # sim1.show_sim()
+    sim = RK45(10**6, dX_dt, Ampicillin, single_regimen)
+    # sim = Euler(10**6, dX_dt, Tetracycline, single_regimen)
+    sim.show_sim(Ampicillin, single_regimen)
     return
 
 
