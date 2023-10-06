@@ -1,5 +1,16 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+
+# HOW LONG TO TAKE IT FOR, HOW LONG TILL ERADICATED???
+# USE RK45 INSTEAD OF EULER
+# TAKE 5 DRUGS IN REGOES, SAY COURSE OF DRUG IS X NUMBER OF DAYS (LIKE 7, SO 21 DOSES TOTAL)
+# FOR EACH, PERFECT PATIENT AFTER 7 DAYS, BACTERIAL DENSITY
+# ERADICATED WHEN GOES 2 ORDERS OF MAGNITUDE ABOVE FINAL DENSITY
+# THEN ADD MISSED DOSES (PROBABILITY OF 1-P OF MISSING DOSE, Q) FOR SINGLE DOSING
+# IF DOSE MISSED IN SINGLE DOSE, ADD TO THE END
+# PLOT Q AGAINST FINAL DENSITY
+# DO FOR SINGLE AND DOUBLE DOSE
 
 
 class Model:
@@ -34,11 +45,13 @@ class Model:
 
 
 class Simulation:
-    antibiotic = Model.Antibiotic
-    regimen = Model.Regimen
-    population = []
-    ab = []
-    time_steps = []
+
+    def __init__(self):
+        self.antibiotic = Model.Antibiotic
+        self.regimen = Model.Regimen
+        self.population = []
+        self.ab = []
+        self.time_steps = []
 
     def show_sim(self):
         fig, ax = plt.subplots(1, 2)
@@ -59,7 +72,7 @@ class Simulation:
         ax[1].plot(self.regimen.time_range, base_zmic, label='zMIC')
         ax[1].set_ylabel('Antibiotic Concentration')
         ax[1].set_xlabel('Time (hrs)')
-        ax[1].legend()
+        ax[1].legend(loc='upper right')
         plt.show()
 
 
@@ -84,14 +97,19 @@ class Euler(Simulation):
         self.ab = np.array(self.ab)
         return
 
+class RK45(Simulation):
+    def __init__(self):
 
-k = 3
-num_hours = 240
+
+k = 6
+num_hours = 48
 test_range = np.linspace(0, num_hours, 10**k)
-set_missed_doses = [1, 7, 9, 11, 23]
+set_missed_doses = [2]
 
 base_regimen = Model.Regimen(test_range)
-single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=True)
+# single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=True)
+single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=[], double_dose=True)
+# double_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=False)
 
 Ciprofloxacin = Model.Antibiotic(0.88, -6.5, 1.1, 0.017, 0.03, name='Ciprofloxacin')
 Ampicillin = Model.Antibiotic(0.75, -4.0, 0.75, 3.4, 8.0, name='Ampicillin')
@@ -145,8 +163,10 @@ def main():
     # basic_euler(10**6, Rifampin)
     # basic_euler(10**6, Streptomycin)
     # basic_euler(10**6, Tetracycline)
-    sim = Euler(10**6, dX_dt, Ampicillin, single_regimen)
+    sim = Euler(10**6, dX_dt, Tetracycline, single_regimen)
+    # sim1 = Euler(10**6, dX_dt, Ampicillin, double_regimen)
     sim.show_sim()
+    # sim1.show_sim()
     return
 
 
