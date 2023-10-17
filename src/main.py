@@ -42,38 +42,50 @@ class Regimen:
         self.p = p
         self.ab = [self.ab_conc(t, antibiotic) for t in time_range]
 
+    def get_delta(self, MIC, a0):
+        delta = (1 / self.dose_period) * np.log(0.5 * MIC / a0)
+        return delta
+
+    def take_dose(self, dose_delta: float, t: float):
+        return (dose_delta == 0 or abs(self.dose_period - self.time_since_dose) < (
+                t - self.last_timestep)) and self.num_doses > 0 and not self.took_dose
+
+    def update(self, t: float, dose_taken: bool):
+        if dose_taken:
+            self.time_since_dose = 0
+            self.last_dose_missed = False
+            self.took_dose = True
+            self.last_timestep = t
+        else:
+            self.time_since_dose += t - self.last_timestep
+            self.last_timestep = t
+            self.took_dose = False
+
     # antibiotic concentration at time t (hours)
     def ab_conc(self, t: float, antibiotic: Antibiotic):
+        return_val = 0
         # get half life of antibiotic
-        delta = (1 / self.dose_period) * np.log(0.5 * antibiotic.MIC / antibiotic.a0)
-
+        delta = self.get_delta(antibiotic.MIC, antibiotic.a0)
         # get time since last dose
         last_dose_delta = self.time_since_dose % self.dose_period
 
         # determine if a dose should be taken
-        if (last_dose_delta == 0 or abs(self.dose_period - self.time_since_dose) < (
-                t - self.last_timestep)) and self.num_doses > 0 and not self.took_dose:
+        if self.take_dose(last_dose_delta, t):
             self.num_doses -= 1
             print(f'dose administered at t={t}')
             if self.last_dose_missed and self.double_dose:
                 antibiotic.last_a0 = 2 * antibiotic.a0
             else:
                 antibiotic.last_a0 = antibiotic.a0
-            self.time_since_dose = 0
-            self.last_dose_missed = False
-            self.took_dose = True
-            self.last_timestep = t
-            return antibiotic.last_a0
-        # update time since last dose
-        # update last timestep
-        self.time_since_dose += t - self.last_timestep
-        self.last_timestep = t
-        self.took_dose = False
-        return antibiotic.last_a0 * np.exp(delta * self.time_since_dose)
+            self.update(t, True)
+            return_val = antibiotic.last_a0
+        else:
+            self.update(t, False)
+            return_val = antibiotic.last_a0 * np.exp(delta * self.time_since_dose)
+        return return_val
 
 
 class Simulation:
-
     def __init__(self):
         self.t_range = []
         self.population = []
@@ -164,12 +176,12 @@ def psi(ab_conc: float, antibiotic: Antibiotic):
 
 # change in density, X, of a bacterial population
 def dX_dt(t: float, X: float, antibiotic: Antibiotic, regimen: Regimen):
-    if X < threshold:
-        return 0
-
-    ab = np.interp(t, regimen.time_range, regimen.ab)
-    print(f't: {t}, ab: {ab}')
-    return np.log(10) * psi(ab, antibiotic) * X
+    dx = 0
+    if X >= threshold:
+        ab = np.interp(t, regimen.time_range, regimen.ab)
+        print(f't: {t}, ab: {ab}')
+        dx = np.log(10) * psi(ab, antibiotic) * X
+    return dx
 
 
 
