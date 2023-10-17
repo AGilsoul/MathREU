@@ -67,11 +67,11 @@ class Regimen:
         # get half life of antibiotic
         delta = self.get_delta(antibiotic.MIC, antibiotic.a0)
         # get time since last dose THIS IS WRONG FIX THIS PLEASE
-        last_dose_delta = self.time_since_dose % self.dose_period
+        # last_dose_delta = self.time_since_dose % self.dose_period
+        last_dose_delta = self.time_since_dose
 
         # determine if a dose should be taken
         if self.take_dose(last_dose_delta, t):
-            self.num_doses -= 1
             print(f'dose administered at t={t}')
             if self.last_dose_missed and self.double_dose:
                 antibiotic.last_a0 = 2 * antibiotic.a0
@@ -79,6 +79,7 @@ class Regimen:
                 antibiotic.last_a0 = antibiotic.a0
             self.update(t, True)
             return_val = antibiotic.last_a0
+            self.num_doses -= 1
         else:
             self.update(t, False)
             return_val = antibiotic.last_a0 * np.exp(delta * self.time_since_dose)
@@ -182,9 +183,6 @@ def dX_dt(t: float, X: float, antibiotic: Antibiotic, regimen: Regimen):
         print(f't: {t}, ab: {ab}')
         dx = np.log(10) * psi(ab, antibiotic) * X
     return dx
-
-
-
 
 
 def main():
