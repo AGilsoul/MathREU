@@ -66,7 +66,7 @@ class Regimen:
         return_val = 0
         # get half life of antibiotic
         delta = self.get_delta(antibiotic.MIC, antibiotic.a0)
-        # get time since last dose
+        # get time since last dose THIS IS WRONG FIX THIS PLEASE
         last_dose_delta = self.time_since_dose % self.dose_period
 
         # determine if a dose should be taken
