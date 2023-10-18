@@ -1,6 +1,9 @@
+import math
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
+import random
 
 # HOW LONG TO TAKE IT FOR, HOW LONG TILL ERADICATED???
 # USE RK45 INSTEAD OF EULER
@@ -46,20 +49,27 @@ class Regimen:
         delta = (1 / self.dose_period) * np.log(0.5 * MIC / a0)
         return delta
 
-    def take_dose(self, dose_delta: float, t: float):
-        return (dose_delta == 0 or abs(self.dose_period - self.time_since_dose) < (
-                t - self.last_timestep)) and self.num_doses > 0 and not self.took_dose
+    # Take dose IF
+    # delta is 0 or difference between closest planned dose time and dose delta is
+    def take_dose(self, t: float):
+        # dose_delta is time since last dose taken
+        factor = math.floor(t / self.dose_period)
+        planned_dose = factor * self.dose_period
+        if planned_dose + self.dose_period < t:
+            planned_dose += self.dose_period
+
+        good_slot = t >= planned_dose > self.last_timestep
+        return good_slot and self.num_doses > 0 and not self.took_dose
 
     def update(self, t: float, dose_taken: bool):
         if dose_taken:
+            print(f'took dose, setting dose missed to {not dose_taken}\n')
             self.time_since_dose = 0
-            self.last_dose_missed = False
             self.took_dose = True
-            self.last_timestep = t
         else:
             self.time_since_dose += t - self.last_timestep
-            self.last_timestep = t
             self.took_dose = False
+        self.last_timestep = t
 
     # antibiotic concentration at time t (hours)
     def ab_conc(self, t: float, antibiotic: Antibiotic):
@@ -68,18 +78,30 @@ class Regimen:
         delta = self.get_delta(antibiotic.MIC, antibiotic.a0)
         # get time since last dose THIS IS WRONG FIX THIS PLEASE
         # last_dose_delta = self.time_since_dose % self.dose_period
-        last_dose_delta = self.time_since_dose
 
         # determine if a dose should be taken
-        if self.take_dose(last_dose_delta, t):
-            print(f'dose administered at t={t}')
-            if self.last_dose_missed and self.double_dose:
-                antibiotic.last_a0 = 2 * antibiotic.a0
+        # INCORPORATE RANDOM MISSED DOSE
+        if self.take_dose(t):
+            rand_num = random.uniform(0, 1)
+            print(f'dose time: {t}, last timestep: {self.last_timestep}')
+            if rand_num < self.p:
+                # if True:
+                print(f'dose administered at t={t}, last dose missed: {self.last_dose_missed}')
+                if self.last_dose_missed and self.double_dose:
+                    print(f'double dosing')
+                    antibiotic.last_a0 = 2 * antibiotic.a0
+                else:
+                    print(f'single dosing')
+                    antibiotic.last_a0 = antibiotic.a0
+                self.update(t, True)
+                self.last_dose_missed = False
+                return_val = antibiotic.last_a0
+                self.num_doses -= 1
             else:
-                antibiotic.last_a0 = antibiotic.a0
-            self.update(t, True)
-            return_val = antibiotic.last_a0
-            self.num_doses -= 1
+                print(f'dose missed at t={t}')
+                self.update(t, False)
+                self.last_dose_missed = True
+                return_val = antibiotic.last_a0 * np.exp(delta * self.time_since_dose)
         else:
             self.update(t, False)
             return_val = antibiotic.last_a0 * np.exp(delta * self.time_since_dose)
@@ -149,11 +171,13 @@ class RK45(Simulation):
         return
 
 
-k = 7
+k = 5
 days = 10
 num_hours = 24 * days  # 7 days in hours
 test_range = np.linspace(0, num_hours, 10**k)
 set_missed_doses = [2]
+q = 0.1
+p = 1-q
 
 
 Ciprofloxacin = Antibiotic(0.88, -6.5, 1.1, 0.017, 0.03, name='Ciprofloxacin')
@@ -164,8 +188,8 @@ Tetracycline = Antibiotic(0.81, -8.1, 0.61, 0.67, 1.0, name='Tetracycline')
 
 # base_regimen = Regimen(test_range, Ampicillin)
 # single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=True)
-single_regimen = Regimen(test_range, Ampicillin, double_dose=True)
-# double_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=False)
+single_regimen = Regimen(test_range, Ampicillin, double_dose=False, p=p)
+double_regimen = Regimen(test_range, Ampicillin, double_dose=True, p=p)
 
 
 # growth rate of bacterial population
@@ -180,7 +204,7 @@ def dX_dt(t: float, X: float, antibiotic: Antibiotic, regimen: Regimen):
     dx = 0
     if X >= threshold:
         ab = np.interp(t, regimen.time_range, regimen.ab)
-        print(f't: {t}, ab: {ab}')
+        # print(f't: {t}, ab: {ab}')
         dx = np.log(10) * psi(ab, antibiotic) * X
     return dx
 
@@ -191,7 +215,8 @@ def main():
     # basic_euler(10**6, Rifampin)
     # basic_euler(10**6, Streptomycin)
     # basic_euler(10**6, Tetracycline)
-    sim = RK45(10**6, dX_dt, Ampicillin, single_regimen)
+    # sim = RK45(10**6, dX_dt, Ampicillin, single_regimen)
+    sim = RK45(10**6, dX_dt, Ampicillin, double_regimen)
     # sim = Euler(10**6, dX_dt, Tetracycline, single_regimen)
     sim.show_sim(Ampicillin, single_regimen)
     return
