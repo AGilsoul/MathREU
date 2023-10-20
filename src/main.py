@@ -1,5 +1,5 @@
 import math
-
+from params import *
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
@@ -43,7 +43,7 @@ class Regimen:
         self.time_range = time_range
         self.double_dose = double_dose
         self.p = p
-        self.ab = [self.ab_conc(t, antibiotic) for t in time_range]
+        # self.ab = [self.ab_conc(t, antibiotic) for t in time_range]
 
     def get_delta(self, MIC, a0):
         delta = (1 / self.dose_period) * np.log(0.5 * MIC / a0)
@@ -127,10 +127,8 @@ class Simulation:
         ax[0].set_ylabel('Bacterial Density')
         ax[0].set_xlabel('Time (hrs)')
 
-        base_mic = [antibiotic.MIC for _ in self.t_range]
-        base_zmic = [antibiotic.zMIC for _ in self.t_range]
+        base_zmic = [PD.zMIC for _ in self.t_range]
         ax[1].plot(self.t_range, self.ab)
-        ax[1].plot(self.t_range, base_mic, label='MIC')
         ax[1].plot(self.t_range, base_zmic, label='zMIC')
         ax[1].set_ylabel('Antibiotic Concentration')
         ax[1].set_xlabel('Time (hrs)')
@@ -138,24 +136,35 @@ class Simulation:
         plt.show()
 
 
-class Euler(Simulation):
-    def __init__(self, X_0, deriv, antibiotic: Antibiotic, regimen: Regimen):
-        super().__init__()
-        self.antibiotic = antibiotic
-        self.regimen = regimen
-        dt = num_hours / 10**k
-        for i in range(0, len(regimen.time_range)):
-            if i == 0:
-                cur_X = X_0
-            else:
-                cur_X = self.population[-1]
-            dx, a = deriv(regimen.time_range[i], cur_X, antibiotic, regimen)
-            self.population.append(cur_X + dx * dt)
-            self.ab.append(a)
+Ampicillin = Antibiotic(0.75, -4.0, 0.75, 3.4, 8.0, name='Ampicillin')
 
-        self.population = np.array(self.population)
-        self.ab = np.array(self.ab)
-        return
+single_regimen = Regimen(test_range, Ampicillin, double_dose=False, p=p)
+double_regimen = Regimen(test_range, Ampicillin, double_dose=True, p=p)
+
+
+def f(b: float, c: float):
+    return PD.r * (1 - (b / PD.K)) - (PD.r + PD.d) * ((c/PD.zMIC)**PD.k) / ((PD.d/PD.r) + (c/PD.zMIC)**PD.k)
+
+
+def dc_dt(c: float):
+    res = -PK.k_e * c
+    return res
+
+
+def db_dt(b: float, c: float):
+    return f(b, c) * b
+
+
+def d_system(t: float, ic):
+    b = ic[0]
+    c = ic[1]
+    d1 = db_dt(b, c)
+    d2 = dc_dt(c)
+    return [d1, d2]
+
+
+def take_dose(t: float):
+    return True
 
 
 # BREAK INTO SMALLER TIME STEPS WITH ODE FOR A
@@ -163,55 +172,36 @@ class Euler(Simulation):
 class RK45(Simulation):
     def __init__(self, X_0, deriv, antibiotic: Antibiotic, regimen: Regimen):
         super().__init__()
-        t_span = (0, regimen.dose_period)
-        num_intervals = regimen.time_range / regimen.dose_period
+        num_intervals = int(num_hours / regimen.dose_period)
+        # num_intervals = 4
+        b = np.array([PD.b_0])
+        c = np.array([PK.D])
+        t_interval = np.array([0])
         for i in range(num_intervals):
             # solve_ivp for system here
-        self.t_range = regimen.time_range
-        ab_vals = regimen.ab
-        solX = solve_ivp(lambda t, x: deriv(t, x, antibiotic, regimen), t_span, [X_0], t_eval=regimen.time_range, dense_output=True, method='RK45')
-        z = solX.sol(self.t_range)[0]
-        self.population = z
-        self.ab = ab_vals
+            eval_points = np.linspace(i * regimen.dose_period, (i+1) * regimen.dose_period, 1000)
+            if take_dose(i):
+                ic = [b[-1], PK.D]
+            else:
+                ic = [b[-1], c[-1]]
+            print(f'IC: {ic}')
+            t_span = (i * regimen.dose_period, (i+1 * regimen.dose_period))
+            sol = solve_ivp(d_system, t_span, ic, dense_output=True, method='RK45')
+            # print(sol)
+            z = sol.sol(eval_points)
+            b_vals = z[0]
+            c_vals = z[1]
+            b = np.append(b, b_vals)
+            c = np.append(c, c_vals)
+            print(b)
+            # print(f'c: {c}')
+            # print(f't_interval: {eval_points}')
+            t_interval = np.append(t_interval, eval_points)
+        self.population = b
+        self.ab = c
+        self.t_range = t_interval
         return
 
-
-k = 5
-days = 10
-num_hours = 24 * days  # 7 days in hours
-test_range = np.linspace(0, num_hours, 10**k)
-set_missed_doses = [2]
-q = 0.1
-p = 1-q
-
-
-Ciprofloxacin = Antibiotic(0.88, -6.5, 1.1, 0.017, 0.03, name='Ciprofloxacin')
-Ampicillin = Antibiotic(0.75, -4.0, 0.75, 3.4, 8.0, name='Ampicillin')
-Rifampin = Antibiotic(0.7, -4.3, 2.5, 12.0, 8.0, name='Rifampin')
-Streptomycin = Antibiotic(0.89, -8.8, 1.9, 18.5, 32.0, name='Streptomycin')
-Tetracycline = Antibiotic(0.81, -8.1, 0.61, 0.67, 1.0, name='Tetracycline')
-
-# base_regimen = Regimen(test_range, Ampicillin)
-# single_regimen = Model.Regimen(test_range, num_hours=num_hours, doses_missed=set_missed_doses, double_dose=True)
-single_regimen = Regimen(test_range, Ampicillin, double_dose=False, p=p)
-double_regimen = Regimen(test_range, Ampicillin, double_dose=True, p=p)
-
-
-# growth rate of bacterial population
-def psi(ab_conc: float, antibiotic: Antibiotic):
-    numerator = (antibiotic.psi_max - antibiotic.psi_min) * (ab_conc/antibiotic.zMIC)**antibiotic.k
-    denominator = (ab_conc/antibiotic.zMIC)**antibiotic.k - (antibiotic.psi_min/antibiotic.psi_max)
-    return antibiotic.psi_max - (numerator / denominator)
-
-
-# change in density, X, of a bacterial population
-def dX_dt(t: float, X: float, antibiotic: Antibiotic, regimen: Regimen):
-    dx = 0
-    if X >= threshold:
-        ab = np.interp(t, regimen.time_range, regimen.ab)
-        # print(f't: {t}, ab: {ab}')
-        dx = np.log(10) * psi(ab, antibiotic) * X
-    return dx
 
 
 def main():
@@ -221,9 +211,10 @@ def main():
     # basic_euler(10**6, Streptomycin)
     # basic_euler(10**6, Tetracycline)
     # sim = RK45(10**6, dX_dt, Ampicillin, single_regimen)
-    sim = RK45(10**6, dX_dt, Ampicillin, double_regimen)
-    # sim = Euler(10**6, dX_dt, Tetracycline, single_regimen)
+    sim = RK45(10**6, db_dt, Ampicillin, double_regimen)
     sim.show_sim(Ampicillin, double_regimen)
+    # sim = Euler(10**6, dX_dt, Tetracycline, single_regimen)
+    # sim.show_sim(Ampicillin, double_regimen)
     return
 
 
