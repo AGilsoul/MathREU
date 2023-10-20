@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import random
 
+# READ UP ON TOXICITY!!!!!!!!!!!!!
 # HOW LONG TO TAKE IT FOR, HOW LONG TILL ERADICATED???
-# USE RK45 INSTEAD OF EULER
 # TAKE 5 DRUGS IN REGOES, SAY COURSE OF DRUG IS X NUMBER OF DAYS (LIKE 7, SO 21 DOSES TOTAL)
 # FOR EACH, PERFECT PATIENT AFTER 7 DAYS, BACTERIAL DENSITY
 # ERADICATED WHEN GOES 2 ORDERS OF MAGNITUDE ABOVE FINAL DENSITY
@@ -158,10 +158,15 @@ class Euler(Simulation):
         return
 
 
+# BREAK INTO SMALLER TIME STEPS WITH ODE FOR A
+# da/dt = - delta * a
 class RK45(Simulation):
     def __init__(self, X_0, deriv, antibiotic: Antibiotic, regimen: Regimen):
         super().__init__()
-        t_span = (0, num_hours)
+        t_span = (0, regimen.dose_period)
+        num_intervals = regimen.time_range / regimen.dose_period
+        for i in range(num_intervals):
+            # solve_ivp for system here
         self.t_range = regimen.time_range
         ab_vals = regimen.ab
         solX = solve_ivp(lambda t, x: deriv(t, x, antibiotic, regimen), t_span, [X_0], t_eval=regimen.time_range, dense_output=True, method='RK45')
@@ -218,7 +223,7 @@ def main():
     # sim = RK45(10**6, dX_dt, Ampicillin, single_regimen)
     sim = RK45(10**6, dX_dt, Ampicillin, double_regimen)
     # sim = Euler(10**6, dX_dt, Tetracycline, single_regimen)
-    sim.show_sim(Ampicillin, single_regimen)
+    sim.show_sim(Ampicillin, double_regimen)
     return
 
 
