@@ -167,6 +167,7 @@ def take_dose(t: float):
     return True
 
 
+# Explore fT>MIC(t) and fAUC:MIC(t)
 # BREAK INTO SMALLER TIME STEPS WITH ODE FOR A
 # da/dt = - delta * a
 class RK45(Simulation):
