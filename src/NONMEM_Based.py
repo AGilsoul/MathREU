@@ -42,6 +42,7 @@ def percent_t_above_mic(conc, weight, dt, total_time):
     return (time_above / total_time) * 100
 
 
+# ASSUME CLCR IS SAME AS CL
 def NONMEM_Based(ka, weight, cl, age):
     sim_time = 48    # total simulation time in hours
     dose_amt = 1000  # dose amount in milligrams
