@@ -13,7 +13,7 @@ mic = 1  # mg/mL
 tvweight = 70  # weight in kg
 tvmic_mg = mic * tvweight # mic in mg
 
-omega = [0.004, 0.036, 0.01, 0.04, 0.001, 0.025]
+omega = [0.04, 0.036, 0.01, 0.04, 0.001, 0.025]
 theta1 = 0.635
 theta2 = 15.5
 theta3 = 0.33
@@ -59,9 +59,11 @@ def NONMEM_Based(ka, kd, weight, rate_elim):
     dose_interval = 8  # number of hours between doses
     time_steps = []
     time_since_dose = 0
-    delay = 7
+    delay = 0
     new_delay = True
     for hr in range(sim_time):
+        if hr == 4 * 24:
+            delay = 8
         if hr == 0:
             # print(f'hour 0, dose given')
             IC = [dose_amt, 0]
@@ -70,6 +72,7 @@ def NONMEM_Based(ka, kd, weight, rate_elim):
             # print(f'hour {hr}, dose given')
             IC = [time_steps[-1].Agi + dose_amt, time_steps[-1].C]
             time_since_dose = 0
+            delay = 0
         else:
             # print(f'hour {hr}')
             IC = [time_steps[-1].Agi, time_steps[-1].C]
@@ -105,7 +108,7 @@ def main():
         age = tvage * np.exp(eta[5])
         weight = tvweight * np.exp(eta[4])
         Cl = ((140 - age)*weight) * theta2 / (72 * 102) * np.exp(eta[1])
-        Vd = weight * np.exp(eta[2])
+        Vd = weight * theta3
         rate_elim = Cl / Vd
         print(f'age: {age}, weight: {weight}, Cl: {Cl}, Vd: {Vd}, rate_elim: {rate_elim}')
         NONMEM_Based(ka, tvkd * np.exp(eta[3]), weight, rate_elim)
